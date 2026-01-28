@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat Work</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .header {
+            background: #16213e;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+            color: #e94560;
+        }
+
+        .chat-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem 2rem;
+        }
+
+        .message {
+            margin-bottom: 1rem;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user {
+            text-align: right;
+        }
+
+        .message-content {
+            display: inline-block;
+            max-width: 80%;
+            padding: 0.8rem 1.2rem;
+            border-radius: 1rem;
+            line-height: 1.5;
+        }
+
+        .message.user .message-content {
+            background: #e94560;
+            color: white;
+            border-bottom-right-radius: 0.3rem;
+        }
+
+        .message.assistant .message-content {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-bottom-left-radius: 0.3rem;
+        }
+
+        .message.system .message-content {
+            background: #0f3460;
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+
+        .message.action .message-content {
+            background: #1a472a;
+            border: 1px solid #2d6a4f;
+        }
+
+        .message-content pre {
+            background: #0a0a15;
+            padding: 0.5rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin: 0.5rem 0;
+        }
+
+        .message-content code {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 0.9rem;
+        }
+
+        .input-container {
+            padding: 1rem 2rem;
+            background: #16213e;
+            border-top: 1px solid #0f3460;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        #messageInput {
+            flex: 1;
+            padding: 0.8rem 1rem;
+            border: 1px solid #0f3460;
+            border-radius: 0.5rem;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 1rem;
+            outline: none;
+        }
+
+        #messageInput:focus {
+            border-color: #e94560;
+        }
+
+        button {
+            padding: 0.8rem 1.5rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: #e94560;
+            color: white;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #d63850;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .options {
+            display: flex;
+            gap: 1rem;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .options label {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            cursor: pointer;
+        }
+
+        .action-buttons {
+            margin-top: 0.5rem;
+        }
+
+        .action-buttons button {
+            padding: 0.4rem 0.8rem;
+            font-size: 0.85rem;
+            margin-right: 0.5rem;
+        }
+
+        .action-buttons .execute {
+            background: #2d6a4f;
+        }
+
+        .action-buttons .cancel {
+            background: #555;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>💬 Chat Work</h1>
+    </div>
+
+    <div class="chat-container" id="chatContainer">
+        <div class="message system">
+            <div class="message-content">
+                欢迎使用 Chat Work！输入消息开始对话，AI 可以帮你执行命令和生成代码。
+            </div>
+        </div>
+    </div>
+
+    <div class="input-container">
+        <div class="input-wrapper">
+            <input type="text" id="messageInput" placeholder="输入消息..." autofocus>
+            <button id="sendBtn" onclick="sendMessage()">发送</button>
+        </div>
+        <div class="options">
+            <label>
+                <input type="checkbox" id="autoExecute"> 自动执行命令
+            </label>
+            <label>
+                <input type="checkbox" id="useWebSocket" checked> 流式输出
+            </label>
+            <button onclick="clearChat()" style="padding: 0.3rem 0.6rem; font-size: 0.85rem; background: #555;">清除对话</button>
+        </div>
+    </div>
+
+    <script>
+        const chatContainer = document.getElementById('chatContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const autoExecuteCheckbox = document.getElementById('autoExecute');
+        const useWebSocketCheckbox = document.getElementById('useWebSocket');
+
+        let ws = null;
+        let sessionId = 'web_' + Math.random().toString(36).substr(2, 9);
+        let currentAssistantMessage = null;
+        let pendingAction = null;
+
+        // 初始化 WebSocket
+        function initWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${location.host}/ws/chat`);
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleWebSocketMessage(data);
+            };
+
+            ws.onclose = () => {
+                setTimeout(initWebSocket, 3000);
+            };
+        }
+
+        function handleWebSocketMessage(data) {
+            if (data.type === 'chunk') {
+                if (!currentAssistantMessage) {
+                    currentAssistantMessage = addMessage('', 'assistant');
+                }
+                currentAssistantMessage.querySelector('.message-content').textContent += data.content;
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            } else if (data.type === 'done') {
+                currentAssistantMessage = null;
+                sendBtn.disabled = false;
+            } else if (data.type === 'action') {
+                pendingAction = data.action;
+                if (!autoExecuteCheckbox.checked) {
+                    showActionConfirm(data.action);
+                }
+            } else if (data.type === 'action_result') {
+                addMessage(data.result, 'action');
+            } else if (data.type === 'system') {
+                addMessage(data.message, 'system');
+            }
+        }
+
+        function addMessage(content, type) {
+            const div = document.createElement('div');
+            div.className = `message ${type}`;
+            div.innerHTML = `<div class="message-content">${escapeHtml(content)}</div>`;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return div;
+        }
+
+        function showActionConfirm(action) {
+            const div = document.createElement('div');
+            div.className = 'message system';
+            div.innerHTML = `
+                <div class="message-content">
+                    检测到操作: <strong>${action.action}</strong>
+                    ${action.command ? `<br>命令: <code>${action.command}</code>` : ''}
+                    ${action.path ? `<br>路径: <code>${action.path}</code>` : ''}
+                    <div class="action-buttons">
+                        <button class="execute" onclick="executeAction(this)">执行</button>
+                        <button class="cancel" onclick="this.parentElement.parentElement.parentElement.remove()">取消</button>
+                    </div>
+                </div>
+            `;
+            chatContainer.appendChild(div);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        async function executeAction(btn) {
+            btn.parentElement.parentElement.parentElement.remove();
+            if (pendingAction) {
+                const response = await fetch('/api/execute', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: pendingAction })
+                });
+                const data = await response.json();
+                addMessage(data.result, 'action');
+                pendingAction = null;
+            }
+        }
+
+        async function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message) return;
+
+            addMessage(message, 'user');
+            messageInput.value = '';
+            sendBtn.disabled = true;
+
+            if (useWebSocketCheckbox.checked && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    message: message,
+                    auto_execute: autoExecuteCheckbox.checked
+                }));
+            } else {
+                try {
+                    const response = await fetch('/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            message: message,
+                            session_id: sessionId,
+                            auto_execute: autoExecuteCheckbox.checked
+                        })
+                    });
+                    const data = await response.json();
+                    addMessage(data.response, 'assistant');
+
+                    if (data.action && !autoExecuteCheckbox.checked) {
+                        pendingAction = data.action;
+                        showActionConfirm(data.action);
+                    }
+                    if (data.action_result) {
+                        addMessage(data.action_result, 'action');
+                    }
+                } catch (error) {
+                    addMessage('请求失败: ' + error.message, 'system');
+                }
+                sendBtn.disabled = false;
+            }
+        }
+
+        async function clearChat() {
+            if (useWebSocketCheckbox.checked && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ message: '/clear' }));
+            } else {
+                await fetch('/api/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId })
+                });
+            }
+            chatContainer.innerHTML = `
+                <div class="message system">
+                    <div class="message-content">对话已清除，开始新的对话。</div>
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // 初始化
+        initWebSocket();
+    </script>
+</body>
+</html>

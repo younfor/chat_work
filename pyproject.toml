@@ -1,0 +1,38 @@
+[project]
+name = "chat_work"
+version = "0.1.0"
+description = "通过聊天就能工作 - AI 对话 + 执行命令 + 代码生成"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "httpx>=0.26.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "websockets>=12.0",
+    "rich>=13.7.0",
+    "typer>=0.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.23.0",
+    "black>=24.1.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+chat_work = "app.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
