@@ -22,6 +22,17 @@ static_dir = os.path.join(os.path.dirname(__file__), "..", "web", "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+@app.on_event("startup")
+async def startup_event():
+    """启动时初始化"""
+    from app.platforms.feishu import feishu_platform
+    from app.api.routes import process_feishu_message
+    
+    # 后台启动飞书 WebSocket
+    import asyncio
+    asyncio.create_task(feishu_platform.start_feishu_ws(process_feishu_message))
+
+
 
 @app.get("/")
 async def index():
